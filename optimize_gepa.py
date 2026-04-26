@@ -101,12 +101,23 @@ def main():
         print(f"Baseline eval failed (continuing to optimization): {e}")
 
     # GEPA
+    log_dir = str(config.ARTIFACTS_DIR / "gepa_logs")
     gepa_kwargs = dict(
         metric=gita_metric,
         reflection_lm=reflection_lm,
         track_stats=args.track_stats,
-        # Reproducibility
         seed=args.seed,
+        # Show 6 training examples to the reflection LM per proposal step instead of
+        # the default 3 — our 12 domains need diversity to avoid domain-specific over-fit.
+        reflection_minibatch_size=6,
+        # Parallel metric calls — LM Studio handles concurrent requests; without this
+        # --auto medium can take 6+ hours on a single thread.
+        num_threads=4,
+        # When Gemma mangles a list field the reflection LM should know the format broke,
+        # not just see a low score with no explanation.
+        add_format_failure_as_feedback=True,
+        # Persist per-step scores and prompts for post-run inspection.
+        log_dir=log_dir,
     )
     if args.max_metric_calls is not None:
         gepa_kwargs["max_metric_calls"] = args.max_metric_calls
