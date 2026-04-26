@@ -35,6 +35,7 @@ from dspy import GEPA
 import config
 from advisor import GitaAdvisor
 from dataset_generator import load_jsonl, to_dspy_examples
+import metrics as metrics_module
 from metrics import gita_metric, quick_eval_score
 
 
@@ -72,6 +73,12 @@ def main():
     task_lm, reflection_lm = config.configure_dspy()
     print(f"Task LM:       {task_lm.model}  ({config.LM_STUDIO_BASE})")
     print(f"Reflection LM: {reflection_lm.model}")
+
+    # Use the reflection LM (gpt-4o) for judging instead of the task LM (Gemma).
+    # Gemma judging its own responses produces noisy, self-congratulatory scores;
+    # gpt-4o gives the reflection step the crisp, tradition-aware feedback it needs.
+    metrics_module.configure_judge(reflection_lm)
+    print(f"Judge LM:      {reflection_lm.model} (overriding task LM for judging)")
 
     # Dataset
     raw = load_jsonl(Path(args.dataset))

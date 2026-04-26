@@ -301,8 +301,19 @@ class JudgeAdvice(dspy.Signature):
     )
 
 
-# Lazily-instantiated judge so we can swap in a stronger LM if available
+# Lazily-instantiated judge. Call configure_judge() to use a stronger LM (e.g. gpt-4o)
+# during GEPA optimization so the reflection LM gets high-quality signal to work from.
 _judge = None
+_judge_lm = None  # None means use the globally-configured LM (task LM)
+
+
+def configure_judge(lm) -> None:
+    """Set the LM used by judge_score. Call before GEPA to use gpt-4o instead of the task LM."""
+    global _judge_lm, _judge
+    _judge_lm = lm
+    _judge = None  # reset so next call recreates with new context
+
+
 def _get_judge():
     global _judge
     if _judge is None:
@@ -313,11 +324,16 @@ def _get_judge():
 def judge_score(user_question: str, pred: dspy.Prediction) -> tuple[float, dict, str]:
     judge = _get_judge()
     try:
-        j = judge(
+        call_kwargs = dict(
             user_question=user_question,
             response=getattr(pred, "response", "") or "",
             sources_cited=getattr(pred, "sources_cited", []) or [],
         )
+        if _judge_lm is not None:
+            with dspy.context(lm=_judge_lm):
+                j = judge(**call_kwargs)
+        else:
+            j = judge(**call_kwargs)
     except Exception as e:
         # If the judge fails (parse error, LM hiccup), fall back gracefully.
         return 0.5, {"judge_error": str(e)}, f"Judge failed: {e}"
