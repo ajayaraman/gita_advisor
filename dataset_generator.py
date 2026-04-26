@@ -303,9 +303,10 @@ def to_dspy_examples(records: list[dict]) -> list[dspy.Example]:
     for r in records:
         ex = dspy.Example(
             user_question=r["question"],
+            history=dspy.History(messages=[]),
             domain=r["domain"],
             scenario=r["scenario"],
-        ).with_inputs("user_question")
+        ).with_inputs("user_question", "history")
         out.append(ex)
     return out
 

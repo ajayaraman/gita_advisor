@@ -22,9 +22,16 @@ Three LMs are configured:
 
 from __future__ import annotations
 import os
+import re
 from pathlib import Path
 import dspy
+import dspy.adapters.chat_adapter as _chat_adapter_module
 from dotenv import load_dotenv
+
+# Gemma (and some other local models) output `[[ ## field ]]` without the closing `##`
+# that DSPy's ChatAdapter expects (`[[ ## field ## ]]`). Patch the module-level regex
+# to accept both forms before any adapter is instantiated.
+_chat_adapter_module.field_header_pattern = re.compile(r"\[\[ ## (\w+)(?:\s*##)? \]\]")
 
 load_dotenv(Path(__file__).parent / ".env")  # explicit path; works from any cwd
 
@@ -53,7 +60,7 @@ TASK_LM_KWARGS = dict(
     api_base=LM_STUDIO_BASE,
     api_key=os.getenv("LM_STUDIO_KEY", "lm-studio"),  # any non-empty string
     temperature=0.6,
-    max_tokens=2000,
+    max_tokens=4096,  # ChainOfThought reasoning + all output fields easily exceeds 2k
     cache=True,
 )
 
@@ -109,12 +116,15 @@ REFLECTION_LM_KWARGS = dict(
 def configure_dspy() -> tuple[dspy.LM, dspy.LM]:
     """Configure DSPy for inference (task LM = local) and return (task_lm, reflection_lm).
 
-    The reflection_lm returned here is Claude Opus 4.7 — pass it directly to
-    GEPA's `reflection_lm` argument in optimize_gepa.py.
+    Uses ChatAdapter with JSONAdapter fallback disabled:
+    - LM Studio rejects json_object and json_schema response_format params.
+    - Gemma outputs `[[ ## field ]]` (no closing ##); the field_header_pattern patch
+      at module load time makes ChatAdapter parse these correctly.
     """
     task_lm = dspy.LM(model=TASK_MODEL_STRING, **TASK_LM_KWARGS)
     reflection_lm = dspy.LM(model=REFLECTION_MODEL, **REFLECTION_LM_KWARGS)
-    dspy.configure(lm=task_lm)
+    # use_json_adapter_fallback=False: LM Studio rejects json_object, so we must never fall back
+    dspy.configure(lm=task_lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
     return task_lm, reflection_lm
 
 

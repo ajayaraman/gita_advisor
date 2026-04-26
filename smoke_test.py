@@ -54,9 +54,9 @@ def main():
             print("  Run:   python knowledge_base.py --build")
         else:
             for h in hits:
-                m = h["meta"]
-                print(f"  [{m['tier']}] {m['work']} {m.get('section','')}  "
-                      f"score={h['score']:.3f}")
+                v = h.verse
+                section = f" — {v.section}" if v.section else ""
+                print(f"  [{v.tier}] {v.work}{section}  score={h.combined_score:.3f}")
     except Exception as e:
         print(f"  FAILED — index probably not built. Run "
               f"`python knowledge_base.py --build` after dropping texts in sources/.")
@@ -66,7 +66,7 @@ def main():
     step("4. End-to-end advisor call")
     advisor = GitaAdvisor()
     try:
-        pred = advisor(user_question=user_q)
+        pred = advisor(user_question=user_q, history=dspy.History(messages=[]))
     except Exception as e:
         print(f"  FAILED — pipeline error: {e}")
         sys.exit(1)
@@ -83,7 +83,7 @@ def main():
     print(f"\n  sources cited: {pred.sources_cited}")
 
     step("5. Metric round-trip")
-    gold = dspy.Example(user_question=user_q).with_inputs("user_question")
+    gold = dspy.Example(user_question=user_q, history=dspy.History(messages=[])).with_inputs("user_question", "history")
     m = gita_metric(gold, pred)
     print(f"  composite score: {m.score:.3f}")
     print(f"\n  --- feedback (this is what GEPA's reflection LM sees) ---")

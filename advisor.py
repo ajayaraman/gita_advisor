@@ -53,9 +53,14 @@ class GitaAdvisor(dspy.Module):
         # introspection ignores it during optimization.
         self._retriever = retriever or AdvaitaRetriever()
 
-    def forward(self, user_question: str) -> dspy.Prediction:
-        # 1. Understand
-        u = self.understand(user_question=user_question)
+    def forward(self, user_question: str, history: dspy.History | None = None) -> dspy.Prediction:
+        if history is None:
+            history = dspy.History(messages=[])
+        # 1. Understand — history lets it interpret follow-ups correctly
+        u = self.understand(
+            history=history,
+            user_question=user_question,
+        )
 
         # 2. Plan retrieval queries
         p = self.plan(
@@ -93,8 +98,9 @@ class GitaAdvisor(dspy.Module):
         selected = [candidates[i - 1] for i in valid_idx]
         selected_text = format_passages_for_llm(selected)
 
-        # 5. Synthesize
+        # 5. Synthesize — history lets it build across turns, avoid repetition
         a = self.synthesize(
+            history=history,
             user_question=user_question,
             felt_emotion=u.felt_emotion,
             deeper_concern=u.deeper_concern,

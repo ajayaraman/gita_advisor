@@ -11,10 +11,9 @@ selection rationale) — useful when iterating on the metric.
 
 from __future__ import annotations
 import argparse
-import sys
-import textwrap
 from pathlib import Path
 
+import dspy
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -41,6 +40,8 @@ def main():
         border_style="cyan",
     ))
 
+    history = dspy.History(messages=[])
+
     while True:
         try:
             console.print()
@@ -58,10 +59,13 @@ def main():
 
         try:
             with console.status("[dim]reflecting ...[/dim]", spinner="dots"):
-                pred = advisor(user_question=line)
+                pred = advisor(user_question=line, history=history)
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             continue
+
+        # Append this exchange to history so the next turn has context
+        history.messages.append({"user_question": line, "response": pred.response})
 
         if args.debug:
             console.print(Rule("[dim]debug[/dim]", style="dim"))

@@ -15,12 +15,19 @@ import dspy
 
 # ──────────────────────────── Stage 1: Understanding ────────────────────────────
 class UnderstandQuery(dspy.Signature):
-    """Read the user's life situation carefully. Identify the felt emotion,
-    the underlying spiritual concern (not just the surface complaint), and the
+    """Read the user's life situation carefully, taking into account the full
+    conversation so far. If there is prior exchange, use it to understand
+    follow-up messages, references like 'what you said earlier', or shifts in
+    the user's emotional state across turns. Identify the felt emotion, the
+    underlying spiritual concern (not just the surface complaint), and the
     Vedāntic themes that are most relevant — drawing only from concepts native
     to Advaita Vedānta."""
 
-    user_question: str = dspy.InputField(desc="The user's message; may be a question, a vent, or a description of a situation.")
+    history: dspy.History = dspy.InputField(
+        desc="Prior turns as a list of message dicts with 'user_question' and 'response' keys. "
+             "Empty history means this is the first message."
+    )
+    user_question: str = dspy.InputField(desc="The user's current message; may be a question, a vent, a follow-up, or a description of a situation.")
 
     felt_emotion: str = dspy.OutputField(
         desc="The dominant emotion the user is experiencing, named precisely (e.g. 'anticipatory grief', not just 'sad')."
@@ -86,8 +93,17 @@ class SynthesizeAdvice(dspy.Signature):
     in vyāvahārika (transactional reality) without ever denying the
     pāramārthika (absolute) view. Cite specific verses/passages by reference,
     integrate them into prose rather than dumping quotes, and keep wit gentle —
-    light around the cosmic predicament, never light about the user's pain."""
+    light around the cosmic predicament, never light about the user's pain.
 
+    If history has prior turns: do not repeat citations or teachings already
+    given; build on or deepen what was said; acknowledge any shift the user has
+    expressed since the last turn. If the user is following up, open by briefly
+    acknowledging the continuity before moving forward."""
+
+    history: dspy.History = dspy.InputField(
+        desc="Prior turns as a list of message dicts with 'user_question' and 'response' keys. "
+             "Use this to avoid repetition and to build across turns."
+    )
     user_question: str = dspy.InputField()
     felt_emotion: str = dspy.InputField()
     deeper_concern: str = dspy.InputField()
