@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+*.whl
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Project data & artifacts
+data/raw/
+data/corpus.jsonl
+data/corpus_enriched.jsonl
+data/enrichment_cache.jsonl
+artifacts/chroma/
+artifacts/optimized_advisor.json
+
+# Sources local (user-supplied, unlicensed content)
+sources_local/
