@@ -70,11 +70,17 @@ class SelectPassages(dspy.Signature):
     speak to this user's situation. Prefer primary sources (Gītā verses,
     Upaniṣadic mantras, Śaṅkara's bhāṣya) over secondary or modern commentary
     when both are available. Reject passages that are merely topically adjacent
-    but don't address the actual spiritual concern."""
+    but don't address the actual spiritual concern. Avoid re-selecting passages
+    whose source was already cited in a prior turn — prefer fresh ground."""
 
     deeper_concern: str = dspy.InputField()
     candidate_passages: str = dspy.InputField(
         desc="Numbered candidate passages with source attribution."
+    )
+    previously_cited: list[str] = dspy.InputField(
+        desc="Source references already cited in earlier turns of this conversation "
+             "(e.g. ['BG 2.47', 'BG 18.66']). Prefer passages not on this list so "
+             "the conversation covers new ground. Empty list on the first turn."
     )
 
     selected_indices: list[int] = dspy.OutputField(

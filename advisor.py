@@ -81,10 +81,16 @@ class GitaAdvisor(dspy.Module):
         # import either.
         candidates_as_dicts = [h.to_dict() for h in candidates]
 
-        # 4. Select
+        # 4. Select — tell the selector what's already been cited so it prefers fresh sources
+        previously_cited = [
+            src
+            for msg in history.messages
+            for src in msg.get("sources_cited", [])
+        ]
         s = self.select(
             deeper_concern=u.deeper_concern,
             candidate_passages=candidates_text,
+            previously_cited=previously_cited,
         )
         # Defensive: clamp indices to valid range
         valid_idx = [

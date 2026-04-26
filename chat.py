@@ -64,8 +64,12 @@ def main():
             console.print(f"[red]Error: {e}[/red]")
             continue
 
-        # Append this exchange to history so the next turn has context
-        history.messages.append({"user_question": line, "response": pred.response})
+        # Append this exchange to history so the next turn has context and knows what was cited
+        history.messages.append({
+            "user_question": line,
+            "response": pred.response,
+            "sources_cited": pred.sources_cited,
+        })
 
         if args.debug:
             console.print(Rule("[dim]debug[/dim]", style="dim"))
