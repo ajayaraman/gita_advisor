@@ -12,11 +12,12 @@ Three LMs are configured:
                    cleanly in one call and costs ~$12-15 for the full 701-
                    verse corpus (one-time). Set ANTHROPIC_API_KEY in env.
 
-  - REFLECTION_LM: Claude Opus 4.7 (API) for GEPA's reflection step.
+  - REFLECTION_LM: gpt-4o (OpenAI) for GEPA's reflection step.
                    GEPA asks the reflection LM to read metric feedback and
                    propose rewritten prompts — this scales strongly with
-                   model quality. Opus 4.7 with extended thinking is the
-                   right choice here. Same ANTHROPIC_API_KEY.
+                   model quality. gpt-4o reasons well enough to handle
+                   nuanced Advaita feedback without breaking the budget.
+                   Same OPENAI_API_KEY as enrichment.
 """
 
 from __future__ import annotations
@@ -80,24 +81,26 @@ ENRICH_LM_KWARGS = dict(
 )
 
 
-# ──────────────────────────── Reflection LM (Claude Opus 4.7, GEPA) ─────────────────────
+# ──────────────────────────── Reflection LM (gpt-4o, GEPA) ──────────────────────────────
 # GEPA's reflection step reads metric feedback and proposes rewritten prompts.
-# This scales strongly with model quality — Opus 4.7 with extended thinking
-# reasons through the failure patterns before writing the mutation, which
-# produces meaningfully better prompt edits than a smaller model does.
+# This scales strongly with model quality. gpt-4o is the right balance here:
+# it reasons well enough to write meaningful prompt mutations from nuanced
+# Advaita feedback, and is affordable on a small OpenAI credit balance.
 #
-# Extended thinking ("adaptive" mode) lets Opus decide how much reasoning to
-# spend per reflection step. temperature=1.0 is required by the API when
-# thinking is enabled — it matches GEPA's diversity requirement anyway.
+# Cost estimate per GEPA run (reflection calls only):
+#   --auto light:  ~50 calls × 6k tokens ≈ $1.50
+#   --auto medium: ~250 calls × 6k tokens ≈ $7.50
 #
-# Same ANTHROPIC_API_KEY as the enrichment LM.
-REFLECTION_MODEL = os.getenv("REFLECTION_MODEL", "anthropic/claude-opus-4-7")
+# gpt-4o-mini is too shallow for this task — it produces generic rewrites
+# that ignore the tradition-specific feedback the metric provides.
+# Same OPENAI_API_KEY as the enrichment LM.
+REFLECTION_MODEL = os.getenv("REFLECTION_MODEL", "openai/gpt-4o")
 
 REFLECTION_LM_KWARGS = dict(
-    api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-    temperature=1.0,   # required for extended thinking; GEPA wants diversity here
-    max_tokens=16000,  # reflection needs headroom for long critiques + prompt text
-    thinking={"type": "enabled", "budget_tokens": 10000},  # adaptive extended thinking
+    api_key=os.getenv("OPENAI_API_KEY", ""),
+    temperature=1.0,   # GEPA wants diversity across reflection proposals
+    max_tokens=6000,   # headroom for detailed critique + full rewritten prompt text
+    response_format={"type": "text"},  # same fix as enrichment LM — avoid json_object
     cache=False,       # reflection calls are intentionally diverse; caching defeats that
 )
 
