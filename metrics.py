@@ -295,6 +295,7 @@ class JudgeAdvice(dspy.Signature):
     wit_calibration: float = dspy.OutputField(desc="0.0 to 1.0")
     source_integration: float = dspy.OutputField(desc="0.0 to 1.0")
     practical_offering: float = dspy.OutputField(desc="0.0 to 1.0")
+    draw_from_personal_experiences: float = dspy.OutputField(desc="0.0 to 1.0")
     critique: str = dspy.OutputField(
         desc="3-6 sentences of prescriptive feedback for revising the response."
     )
@@ -328,14 +329,16 @@ def judge_score(user_question: str, pred: dspy.Prediction) -> tuple[float, dict,
         "wit_calibration": float(j.wit_calibration or 0.0),
         "source_integration": float(j.source_integration or 0.0),
         "practical_offering": float(j.practical_offering or 0.0),
+        "draw_from_personal_experiences": float(j.draw_from_personal_experiences or 0.0),
     }
     weights = {
         "advaita_coherence": 0.25,
         "two_truths_discipline": 0.20,
         "empathy_without_dissolving": 0.20,
         "wit_calibration": 0.10,
-        "source_integration": 0.15,
+        "source_integration": 0.10,
         "practical_offering": 0.10,
+        "draw_from_personal_experiences": 0.05,
     }
     score = sum(rubric[k] * weights[k] for k in rubric)
     score = max(0.0, min(1.0, score))

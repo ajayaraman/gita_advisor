@@ -217,6 +217,7 @@ SOURCES: list[Source] = [
             "https://www.wisdomlib.org/hinduism/book/mundaka-upanishad-shankara-bhashya",
         ),
         parser="wisdomlib_html",
+        enabled=False,  # wisdomlib_html parser not yet implemented
         notes=(
             "The wisdomlib parser will follow the table-of-contents links from "
             "this index page to fetch each section."
@@ -288,6 +289,7 @@ SOURCES: list[Source] = [
         license="public_domain",  # under your responsibility
         urls=(),
         parser="plain_text",
+        enabled=False,  # no URLs; user drops files manually into sources_local/
         notes=(
             "Anything in sources_local/. Convention: tier__work__section.txt "
             "(see parsers/plain_text.py)."

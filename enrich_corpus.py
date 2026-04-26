@@ -86,8 +86,14 @@ def enrich_all(
     limit: int | None = None,
     re_enrich: bool = False,
     only_failed: bool = False,
+    use_claude: bool = True,
 ) -> None:
-    config.configure_dspy()
+    if use_claude:
+        lm = config.configure_enrich_lm()
+        print(f"[enrich] LM: {lm.model} (Claude API)")
+    else:
+        config.configure_dspy()
+        print(f"[enrich] LM: {config.LOCAL_MODEL} (local LM Studio)")
     enricher = Enricher()
 
     cache = _load_cache(cache_path) if not re_enrich else {}
@@ -148,6 +154,9 @@ def main():
     ap.add_argument("--only-failed", action="store_true",
                     help="Re-run only the verses whose previous enrichment "
                          "failed (FAILED stamp in enrichment_model).")
+    ap.add_argument("--lm", choices=["claude", "local"], default="claude",
+                    help="Which LM to use: 'claude' (default, Sonnet 4.6 via API) "
+                         "or 'local' (LM Studio). Claude requires ANTHROPIC_API_KEY.")
     args = ap.parse_args()
 
     enrich_all(
@@ -157,6 +166,7 @@ def main():
         limit=args.limit,
         re_enrich=args.re_enrich,
         only_failed=args.only_failed,
+        use_claude=(args.lm == "claude"),
     )
 
 

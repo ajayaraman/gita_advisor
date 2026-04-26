@@ -190,15 +190,28 @@ def _load_translations(path: Path) -> dict[int, dict[str, str]]:
 
     out: dict[int, dict[str, str]] = {}
     for row in raw:
-        vid = row.get("verse_id") or row.get("verse_number_id") or row.get("id")
-        author = row.get("author_id") or row.get("authorName") or row.get("author")
+        vid = row.get("verse_id") or row.get("verseNumber") or row.get("verse_number_id") or row.get("id")
         text = row.get("description") or row.get("text") or row.get("translation")
-        if vid is None or not author or not text:
+        if vid is None or not text:
             continue
-        # Only keep allowlisted translators
-        if author not in ALLOWED_TRANSLATORS:
+
+        # Skip non-English rows (Ramsukhdas Hindi etc.)
+        lang = (row.get("lang") or "").lower()
+        if lang and lang not in ("english", "en"):
             continue
-        out.setdefault(int(vid), {})[author] = text
+
+        # Map the authorName (e.g. "Swami Sivananda") to an allowlist key
+        # ("sivananda") via case-insensitive substring matching. The numeric
+        # author_id field alone can't match the allowlist, which is why we
+        # prefer authorName here.
+        name_str = str(row.get("authorName") or row.get("author_id") or row.get("author") or "").strip()
+        matched_key = next(
+            (k for k in ALLOWED_TRANSLATORS if k.lower() in name_str.lower()),
+            None,
+        )
+        if matched_key is None:
+            continue
+        out.setdefault(int(vid), {})[matched_key] = text
     return out
 
 

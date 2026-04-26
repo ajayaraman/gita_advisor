@@ -130,7 +130,7 @@ def parse(raw_dir: Path) -> Iterable[Verse]:
             continue
         if c is None or not (1 <= v <= 80):
             continue
-        events.append(("verse", m.start(), c, v, m.end()))
+        events.append(("verse", m.start(), c, v, m.end(), m.start("verse")))
 
     events.sort(key=lambda e: e[1])
 
@@ -145,19 +145,18 @@ def parse(raw_dir: Path) -> Iterable[Verse]:
         if ev[0] == "chapter":
             current_chapter = ev[2]
             continue
-        # ev: ("verse", start, chap, verse, end)
-        _, start, chap, verse, end = ev
+        # ev: ("verse", start, chap, verse, end, verse_pos)
+        _, start, chap, verse, end, verse_pos = ev
 
-        # If the chapter on the verse marker disagrees with the running chapter,
-        # trust the marker — Sastry sometimes labels mid-paragraph references.
-        # But guard against absurd jumps (e.g. an isolated "(I. 5.)" reference
-        # in the middle of chapter 6 — these are cross-references, not section
-        # boundaries). We only flush a new chapter when the marker is the first
-        # thing on a line.
-        line_start = text.rfind("\n", 0, start) + 1
-        on_own_line = (start - line_start) <= 4
-        if on_own_line:
-            current_chapter = chap
+        # Only treat markers where the verse NUMBER appears near the start of
+        # its line — those are actual section headings. Inline cross-references
+        # like "(II. 47.)" mid-paragraph have the verse number well into the
+        # line and must not be treated as section boundaries.
+        verse_line_start = text.rfind("\n", 0, verse_pos) + 1
+        on_own_line = (verse_pos - verse_line_start) <= 8
+        if not on_own_line:
+            continue
+        current_chapter = chap
 
         if last_marker_pos is not None and last_chap is not None and last_verse is not None:
             bhashya_text = text[last_marker_pos:start].strip()
@@ -205,7 +204,7 @@ def _build_verse(chap: int, verse: int, body: str) -> Verse:
         verse_id=f"bhagavad_gita_{chap:02d}_{verse:02d}",
         work="bhagavad_gita_bhashya",
         work_display="Bhagavad Gītā with Śaṅkara's Bhāṣya",
-        verse_ref=f"BG {chap}.{verse} (bhāṣya)",
+        verse_ref=f"BG {chap}.{verse}",
         tier="shankara",
         section=f"chapter_{chap:02d}",
         section_display=f"Chapter {chap}",
