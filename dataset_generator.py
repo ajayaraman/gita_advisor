@@ -207,10 +207,13 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")[:60]
 
 
-def generate_questions(target_n: int = 500, seed: int = 7) -> list[QuestionRecord]:
+def generate_questions(target_n: int = 500, seed: int = 7, use_local: bool = False) -> list[QuestionRecord]:
     """Generate ~target_n unique questions via combinatorics + LM rewriting."""
     rng = random.Random(seed)
-    config.configure_dspy()
+    if use_local:
+        config.configure_dspy()
+    else:
+        config.configure_enrich_lm()  # gpt-4o-mini: faster and more stylistically diverse
     writer = dspy.Predict(WriteUserMessage)
 
     # Build the (domain, scenario, voice, form, age) plan first
@@ -317,9 +320,11 @@ def main():
     ap.add_argument("--n", type=int, default=500)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", type=str, default=str(config.DATASET_PATH))
+    ap.add_argument("--lm", choices=["openai", "local"], default="openai",
+                    help="openai = gpt-4o-mini (default, faster); local = LM Studio task LM")
     args = ap.parse_args()
 
-    records = generate_questions(target_n=args.n, seed=args.seed)
+    records = generate_questions(target_n=args.n, seed=args.seed, use_local=(args.lm == "local"))
     save_jsonl(records, Path(args.out))
 
 
