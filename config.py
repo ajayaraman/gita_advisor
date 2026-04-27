@@ -48,7 +48,24 @@ for d in (SOURCES_DIR, DATA_DIR, ARTIFACTS_DIR, CHROMA_DIR):
 DATASET_PATH = DATA_DIR / "synthetic_questions.jsonl"
 OPTIMIZED_PROGRAM_PATH = ARTIFACTS_DIR / "optimized_advisor.json"
 
-# ──────────────────────────── Task LM (local, inference-time) ────────────────────────────
+# ──────────────────────────── Task LM — Gemini API (preferred) ───────────────────────────
+# When GEMINI_API_KEY is set, route the task LM through Google AI Studio.
+# Same Gemma 4 26B weights, but no local GPU required and the free tier is
+# sufficient for inference + GEPA optimization runs.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_TASK_MODEL = os.getenv("GEMINI_TASK_MODEL", "gemini/gemma-4-26b-a4b-it")
+
+GEMINI_TASK_LM_KWARGS = dict(
+    api_key=GEMINI_API_KEY,
+    temperature=0.6,
+    # Gemma 4 thinking tokens count against max_tokens in the Gemini API.
+    # Each pipeline call burns ~3-4k reasoning tokens before writing output,
+    # so 4096 gets truncated. 16384 gives comfortable headroom for both.
+    max_tokens=16384,
+    cache=True,
+)
+
+# ──────────────────────────── Task LM — LM Studio fallback ───────────────────────────────
 LM_STUDIO_BASE = os.getenv("LM_STUDIO_BASE", "http://localhost:1234/v1")
 LOCAL_MODEL = os.getenv("LOCAL_MODEL", "google/gemma-4-26b-a4b")
 
@@ -63,6 +80,10 @@ TASK_LM_KWARGS = dict(
     max_tokens=4096,  # ChainOfThought reasoning + all output fields easily exceeds 2k
     cache=True,
 )
+
+# Which backend to use: "gemini" if the API key is present, else "lm_studio".
+# Override with TASK_LM_BACKEND=lm_studio to force local even when the key is set.
+TASK_LM_BACKEND: str = os.getenv("TASK_LM_BACKEND", "gemini" if GEMINI_API_KEY else "lm_studio")
 
 
 # ──────────────────────────── Enrichment LM (OpenAI gpt-4o-mini, offline batch) ─────────
@@ -87,6 +108,21 @@ ENRICH_LM_KWARGS = dict(
                                        # OpenAI now requires json_schema or text
 )
 
+
+# ──────────────────────────── Proxy Task LM (gpt-4o-mini, GEPA optimization only) ────────
+# When running GEPA with --proxy-task-lm, this model replaces Gemma 4 as the task LM
+# during optimization. Prompts are model-agnostic text; they transfer back to Gemma 4
+# at inference time. gpt-4o-mini runs ~20x faster than Gemma 4 thinking mode, bringing
+# --auto light from ~260 hours to ~2-3 hours.
+PROXY_TASK_MODEL = os.getenv("PROXY_TASK_MODEL", "openai/gpt-4o-mini")
+
+PROXY_TASK_LM_KWARGS = dict(
+    api_key=os.getenv("OPENAI_API_KEY", ""),
+    temperature=0.6,
+    max_tokens=4096,
+    cache=True,
+    response_format={"type": "text"},
+)
 
 # ──────────────────────────── Reflection LM (gpt-4o, GEPA) ──────────────────────────────
 # GEPA's reflection step reads metric feedback and proposes rewritten prompts.
@@ -114,14 +150,24 @@ REFLECTION_LM_KWARGS = dict(
 
 # ──────────────────────────── Configure helpers ───────────────────────────────────────
 def configure_dspy() -> tuple[dspy.LM, dspy.LM]:
-    """Configure DSPy for inference (task LM = local) and return (task_lm, reflection_lm).
+    """Configure DSPy for inference and return (task_lm, reflection_lm).
 
-    Uses ChatAdapter with JSONAdapter fallback disabled:
-    - LM Studio rejects json_object and json_schema response_format params.
-    - Gemma outputs `[[ ## field ]]` (no closing ##); the field_header_pattern patch
-      at module load time makes ChatAdapter parse these correctly.
+    Prefers Gemini API when GEMINI_API_KEY is set (same Gemma 4 26B weights,
+    hosted by Google, free tier). Falls back to LM Studio otherwise.
+    Override with TASK_LM_BACKEND=lm_studio env var to force local.
+
+    ChatAdapter fallback to JSONAdapter is disabled in both paths because:
+    - LM Studio rejects json_object.
+    - Gemma outputs `[[ ## field ]]` (no closing ##); the field_header_pattern
+      patch at module load time makes ChatAdapter parse these correctly.
     """
-    task_lm = dspy.LM(model=TASK_MODEL_STRING, **TASK_LM_KWARGS)
+    if TASK_LM_BACKEND == "gemini":
+        task_lm = dspy.LM(model=GEMINI_TASK_MODEL, **GEMINI_TASK_LM_KWARGS)
+        print(f"Task LM backend: Gemini API ({GEMINI_TASK_MODEL})")
+    else:
+        task_lm = dspy.LM(model=TASK_MODEL_STRING, **TASK_LM_KWARGS)
+        print(f"Task LM backend: LM Studio ({TASK_MODEL_STRING} @ {LM_STUDIO_BASE})")
+
     reflection_lm = dspy.LM(model=REFLECTION_MODEL, **REFLECTION_LM_KWARGS)
     # use_json_adapter_fallback=False: LM Studio rejects json_object, so we must never fall back
     dspy.configure(lm=task_lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))

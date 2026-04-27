@@ -53,16 +53,26 @@ class GitaAdvisor(dspy.Module):
         # introspection ignores it during optimization.
         self._retriever = retriever or AdvaitaRetriever()
 
-    def forward(self, user_question: str, history: dspy.History | None = None) -> dspy.Prediction:
+    def forward(
+        self,
+        user_question: str,
+        history: dspy.History | None = None,
+        _stage_cb=None,
+    ) -> dspy.Prediction:
         if history is None:
             history = dspy.History(messages=[])
+
         # 1. Understand — history lets it interpret follow-ups correctly
+        if _stage_cb:
+            _stage_cb("understanding your question...")
         u = self.understand(
             history=history,
             user_question=user_question,
         )
 
         # 2. Plan retrieval queries
+        if _stage_cb:
+            _stage_cb("planning search queries...")
         p = self.plan(
             surface_concern=u.surface_concern,
             deeper_concern=u.deeper_concern,
@@ -71,6 +81,8 @@ class GitaAdvisor(dspy.Module):
         queries = p.queries[: config.N_RETRIEVAL_QUERIES] if p.queries else [u.deeper_concern]
 
         # 3. Retrieve
+        if _stage_cb:
+            _stage_cb("searching scriptures...")
         hits = self._retriever.search_many(queries, k_per=config.TOP_K_RETRIEVE)
         # Cap candidate set so the selector prompt stays focused
         candidates = hits[: max(8, config.TOP_K_RETRIEVE)]
@@ -82,6 +94,8 @@ class GitaAdvisor(dspy.Module):
         candidates_as_dicts = [h.to_dict() for h in candidates]
 
         # 4. Select — tell the selector what's already been cited so it prefers fresh sources
+        if _stage_cb:
+            _stage_cb("selecting passages...")
         previously_cited = [
             src
             for msg in history.messages
@@ -105,6 +119,8 @@ class GitaAdvisor(dspy.Module):
         selected_text = format_passages_for_llm(selected)
 
         # 5. Synthesize — history lets it build across turns, avoid repetition
+        if _stage_cb:
+            _stage_cb("composing response...")
         a = self.synthesize(
             history=history,
             user_question=user_question,
@@ -116,6 +132,7 @@ class GitaAdvisor(dspy.Module):
         return dspy.Prediction(
             response=a.response,
             sources_cited=a.sources_cited or [],
+            synthesis_reasoning=getattr(a, "reasoning", ""),
             # Carry intermediate state for the metric / debugging:
             felt_emotion=u.felt_emotion,
             surface_concern=u.surface_concern,

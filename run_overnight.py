@@ -82,21 +82,22 @@ def run_test_suite(logfile) -> dict:
 
     import config
     from advisor import load_optimized
-    from metrics import gita_metric, quick_eval_score
+    from metrics import gita_metric
     import dspy
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     config.configure_dspy()
 
     advisor = load_optimized()
+    n = len(TEST_QUESTIONS)
 
-    results = []
-    for i, q in enumerate(TEST_QUESTIONS, 1):
-        log(f"  Test {i}/{len(TEST_QUESTIONS)}: {q[:60]}...", logfile)
+    def run_one(i_q):
+        i, q = i_q
         try:
             pred = advisor(user_question=q, history=dspy.History(messages=[]))
             gold = dspy.Example(user_question=q).with_inputs("user_question")
             m = gita_metric(gold, pred)
-            result = {
+            return i, q, {
                 "question": q,
                 "score": round(float(m.score), 3),
                 "word_count": len(pred.response.split()),
@@ -104,13 +105,23 @@ def run_test_suite(logfile) -> dict:
                 "response_excerpt": pred.response[:200],
                 "feedback_excerpt": m.feedback[:500],
             }
-            log(f"    score={m.score:.3f}  wc={result['word_count']}  sources={pred.sources_cited}", logfile)
         except Exception as e:
-            result = {"question": q, "error": str(e), "score": 0.0}
-            log(f"    ERROR: {e}", logfile)
-        results.append(result)
+            return i, q, {"question": q, "error": str(e), "score": 0.0}
 
-    avg = sum(r.get("score", 0) for r in results) / len(results)
+    indexed = list(enumerate(TEST_QUESTIONS, 1))
+    results_map = {}
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        futures = {pool.submit(run_one, iq): iq for iq in indexed}
+        for fut in as_completed(futures):
+            i, q, result = fut.result()
+            results_map[i] = result
+            if "error" in result:
+                log(f"  [{i}/{n}] ERROR: {result['error']}", logfile)
+            else:
+                log(f"  [{i}/{n}] score={result['score']:.3f}  wc={result['word_count']}  sources={result['sources_cited']}", logfile)
+
+    results = [results_map[i] for i in range(1, n + 1)]
+    avg = sum(r.get("score", 0) for r in results) / n
     log(f"=== TEST SUITE DONE — avg score: {avg:.3f} ===", logfile)
     return {"questions": results, "avg_score": round(avg, 3), "timestamp": ts()}
 
