@@ -1,3 +1,14 @@
+---
+title: Gita Advisor
+emoji: 🕉️
+colorFrom: yellow
+colorTo: orange
+sdk: gradio
+sdk_version: 5.33.0
+app_file: app.py
+pinned: false
+---
+
 # Gītā Advisor
 
 A spiritual advisor grounded in Advaita Vedānta as taught by Śaṅkarācārya,
