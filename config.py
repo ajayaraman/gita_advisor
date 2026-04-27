@@ -195,7 +195,20 @@ def configure_enrich_lm() -> dspy.LM:
 # Local sentence-transformer for retrieval. BGE-small is a sweet spot for
 # semantic philosophy text on a Mac without burning RAM.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
-EMBED_DEVICE = os.getenv("EMBED_DEVICE", "mps")  # "mps" on Apple Silicon, "cpu" otherwise
+def _default_embed_device() -> str:
+    if "EMBED_DEVICE" in os.environ:
+        return os.environ["EMBED_DEVICE"]
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+EMBED_DEVICE = _default_embed_device()
 
 TOP_K_RETRIEVE = 8       # passages to fetch per query
 N_RETRIEVAL_QUERIES = 3  # the planner generates this many per user question
