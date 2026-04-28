@@ -6,6 +6,11 @@ Each signature is a small, focused contract. GEPA will rewrite the docstrings
 the *initial* prompts here are deliberately minimal — they're starting points,
 not finished prompts. We give just enough scaffolding to make the very first
 forward pass coherent. GEPA does the rest.
+
+Merged signatures (AnalyzeAndPlan, SelectAndSynthesize) combine the original
+four into two, halving the number of LLM round-trips at inference time.
+The original four (UnderstandQuery, PlanRetrieval, SelectPassages, SynthesizeAdvice)
+are kept for GEPA optimization runs which benefit from granular predictors.
 """
 
 from __future__ import annotations
@@ -166,4 +171,80 @@ class SynthesizeAdvice(dspy.Signature):
     )
     sources_cited: list[str] = dspy.OutputField(
         desc="Source references actually cited in the response, e.g. 'BG 2.47', 'Bṛhadāraṇyaka Up. 4.4.5', 'Vivekacūḍāmaṇi 11'."
+    )
+
+
+# ──────────────── Merged signatures (inference-time, 2 calls instead of 4) ────────────────
+
+class AnalyzeAndPlan(dspy.Signature):
+    """Understand the user's situation through the lens of Advaita Vedānta and
+    plan diverse search queries to find the most relevant scriptural passages.
+
+    First identify the felt emotion, surface concern, and the deeper existential
+    concern (usually about identity, attachment, dharma, or meaning). Then name
+    2-4 Vedāntic themes using precise Sanskrit terms. Finally, produce 3 diverse
+    search queries targeting different angles — one philosophical principle,
+    one parallel situation in the texts, one practical teaching."""
+
+    history: dspy.History = dspy.InputField(
+        desc="Prior turns as a list of message dicts with 'user_question' and 'response' keys. "
+             "Empty history means this is the first message."
+    )
+    user_question: str = dspy.InputField(
+        desc="The user's current message; may be a question, a vent, a follow-up, or a situation."
+    )
+
+    felt_emotion: str = dspy.OutputField(
+        desc="The dominant emotion the user is experiencing, named precisely (e.g. 'anticipatory grief', not just 'sad')."
+    )
+    surface_concern: str = dspy.OutputField(
+        desc="What the user is literally asking about, in one sentence."
+    )
+    deeper_concern: str = dspy.OutputField(
+        desc="The underlying existential/spiritual concern — usually about identity, attachment, "
+             "fear, dharma, or meaning — that the surface concern is a symptom of. One sentence."
+    )
+    vedantic_themes: list[str] = dspy.OutputField(
+        desc="2-4 Advaita-Vedānta concepts most relevant to this situation. "
+             "Use Sanskrit terms with brief gloss, e.g. 'adhyāsa (superimposition of self onto roles)'."
+    )
+    queries: list[str] = dspy.OutputField(
+        desc="3 distinct search queries (5-15 words each) to find relevant scriptural passages. "
+             "Vary in angle: philosophical principle, parallel situation, practical teaching."
+    )
+
+
+class SelectAndSynthesize(dspy.Signature):
+    """From the candidate passages, select the 2-4 that genuinely speak to this
+    user's situation, then compose a response grounded in Advaita Vedānta.
+
+    Prefer primary sources (Gītā verses, Upaniṣadic mantras, Śaṅkara's bhāṣya).
+    Reject passages that are merely topically adjacent. Honor the two-truths
+    distinction: meet the user in vyāvahārika (transactional reality) without
+    denying the pāramārthika (absolute) view. Cite specific verses in prose —
+    integrate, do not dump. Wit is welcome around the cosmic predicament, never
+    around the user's pain. Avoid repeating sources already cited in prior turns."""
+
+    history: dspy.History = dspy.InputField(
+        desc="Prior turns. Use to avoid repeating citations and to build across turns."
+    )
+    user_question: str = dspy.InputField()
+    felt_emotion: str = dspy.InputField()
+    deeper_concern: str = dspy.InputField()
+    candidate_passages: str = dspy.InputField(
+        desc="Numbered candidate passages with source attribution. Select from these."
+    )
+    previously_cited: list[str] = dspy.InputField(
+        desc="Sources already cited in earlier turns (e.g. ['BG 2.47']). Prefer fresh ground."
+    )
+
+    response: str = dspy.OutputField(
+        desc="The advisor's reply. 250-450 words. Open by acknowledging the felt experience. "
+             "Move into the Vedāntic perspective. Cite 2-4 primary sources inline (use only "
+             "passages from the candidates). Close with a concrete practice or shift in "
+             "perspective they can try this week. Address the user as 'you'. "
+             "Avoid Western therapy clichés ('it's understandable', 'validate', etc.)."
+    )
+    sources_cited: list[str] = dspy.OutputField(
+        desc="Source references actually cited in the response, e.g. 'BG 2.47', 'Muṇḍaka Up. 2.2.5'."
     )

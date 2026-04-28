@@ -50,8 +50,16 @@ OPTIMIZED_PROGRAM_PATH = ARTIFACTS_DIR / "optimized_advisor.json"
 
 # ──────────────────────────── Task LM — Gemini API (preferred) ───────────────────────────
 # When GEMINI_API_KEY is set, route the task LM through Google AI Studio.
-# Same Gemma 4 26B weights, but no local GPU required and the free tier is
-# sufficient for inference + GEPA optimization runs.
+#
+# Model selection guide (set GEMINI_TASK_MODEL env var to override):
+#   gemini/gemini-2.5-flash   — default; ~15-25s/call; good Advaita quality; free tier
+#   gemini/gemma-4-26b-a4b-it — highest quality (~80s/call); use for offline GEPA runs
+#   gemini/gemini-2.0-flash   — fastest (~5s/call); lower Advaita fidelity
+#
+# Timing benchmark (2-call merged pipeline, April 2026):
+#   gemma-4-26b-a4b-it:  ~80s total (thinking tokens dominate)
+#   gemini-2.5-flash:    ~20-25s total (estimated)
+#   gpt-4o-mini:         ~20s total (lower quality — therapy clichés, no Sanskrit)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_TASK_MODEL = os.getenv("GEMINI_TASK_MODEL", "gemini/gemma-4-26b-a4b-it")
 
@@ -81,9 +89,63 @@ TASK_LM_KWARGS = dict(
     cache=True,
 )
 
-# Which backend to use: "gemini" if the API key is present, else "lm_studio".
-# Override with TASK_LM_BACKEND=lm_studio to force local even when the key is set.
-TASK_LM_BACKEND: str = os.getenv("TASK_LM_BACKEND", "gemini" if GEMINI_API_KEY else "lm_studio")
+# ──────────────────────────── Task LM — HuggingFace Router ──────────────────────────────
+# router.huggingface.co/v1 is OpenAI-compatible; use the "openai/" LiteLLM prefix
+# with api_base pointing at HF's router endpoint.
+# Set HF_MODEL env var to use a different model slug (must be deployed on HF).
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_ROUTER_BASE = os.getenv("HF_ROUTER_BASE", "https://router.huggingface.co/v1")
+HF_MODEL = os.getenv("HF_MODEL", "google/gemma-4-26B-A4B-it")
+HF_MODEL_STRING = f"openai/{HF_MODEL}"
+
+HF_LM_KWARGS = dict(
+    api_base=HF_ROUTER_BASE,
+    api_key=HF_TOKEN,
+    temperature=0.6,
+    max_tokens=4096,
+    cache=True,
+)
+
+# ──────────────────────────── Task LM — OpenRouter ───────────────────────────────────────
+# LiteLLM recognises the "openrouter/" prefix natively and routes through
+# https://openrouter.ai/api/v1.  Pick any model slug from openrouter.ai/models.
+#
+# Speed vs quality guide (set OPENROUTER_MODEL to override):
+#   openrouter/google/gemini-2.0-flash-001       — fastest (~3-5s); good quality
+#   openrouter/google/gemini-2.5-flash-preview   — balanced (~8-12s)
+#   openrouter/anthropic/claude-3-5-haiku        — reliable structured output
+#   openrouter/google/gemma-3-27b-it             — closest to the local Gemma 4 weights
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+_openrouter_model_raw = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+# LiteLLM requires the "openrouter/" prefix; add it if the env var omits it.
+OPENROUTER_MODEL = (
+    _openrouter_model_raw
+    if _openrouter_model_raw.startswith("openrouter/")
+    else f"openrouter/{_openrouter_model_raw}"
+)
+
+OPENROUTER_LM_KWARGS = dict(
+    api_key=OPENROUTER_API_KEY,
+    temperature=0.6,
+    max_tokens=4096,
+    cache=True,
+)
+
+# Which backend to use: "openrouter" if that key is set (and Gemini is not),
+# "gemini" if GEMINI_API_KEY is set, else "lm_studio".
+# Force a specific one with TASK_LM_BACKEND=openrouter|gemini|lm_studio.
+def _default_task_lm_backend() -> str:
+    if "TASK_LM_BACKEND" in os.environ:
+        return os.environ["TASK_LM_BACKEND"]
+    if GEMINI_API_KEY:
+        return "gemini"
+    if OPENROUTER_API_KEY:
+        return "openrouter"
+    if HF_TOKEN:
+        return "hf"
+    return "lm_studio"
+
+TASK_LM_BACKEND: str = _default_task_lm_backend()
 
 
 # ──────────────────────────── Enrichment LM (OpenAI gpt-4o-mini, offline batch) ─────────
@@ -149,21 +211,31 @@ REFLECTION_LM_KWARGS = dict(
 
 
 # ──────────────────────────── Configure helpers ───────────────────────────────────────
-def configure_dspy() -> tuple[dspy.LM, dspy.LM]:
+def configure_dspy(backend: str | None = None) -> tuple[dspy.LM, dspy.LM]:
     """Configure DSPy for inference and return (task_lm, reflection_lm).
 
-    Prefers Gemini API when GEMINI_API_KEY is set (same Gemma 4 26B weights,
-    hosted by Google, free tier). Falls back to LM Studio otherwise.
-    Override with TASK_LM_BACKEND=lm_studio env var to force local.
+    backend overrides TASK_LM_BACKEND when provided explicitly (used by chat.py
+    --backend flag). Accepted values: "gemini", "openrouter", "lm_studio".
 
-    ChatAdapter fallback to JSONAdapter is disabled in both paths because:
+    ChatAdapter fallback to JSONAdapter is disabled in all paths because:
     - LM Studio rejects json_object.
     - Gemma outputs `[[ ## field ]]` (no closing ##); the field_header_pattern
       patch at module load time makes ChatAdapter parse these correctly.
     """
-    if TASK_LM_BACKEND == "gemini":
+    effective_backend = backend or TASK_LM_BACKEND
+    if effective_backend == "gemini":
         task_lm = dspy.LM(model=GEMINI_TASK_MODEL, **GEMINI_TASK_LM_KWARGS)
         print(f"Task LM backend: Gemini API ({GEMINI_TASK_MODEL})")
+    elif effective_backend == "openrouter":
+        if not OPENROUTER_API_KEY:
+            raise SystemExit("OPENROUTER_API_KEY is not set. Add it to your .env file.")
+        task_lm = dspy.LM(model=OPENROUTER_MODEL, **OPENROUTER_LM_KWARGS)
+        print(f"Task LM backend: OpenRouter ({OPENROUTER_MODEL})")
+    elif effective_backend == "hf":
+        if not HF_TOKEN:
+            raise SystemExit("HF_TOKEN is not set. Add it to your .env file.")
+        task_lm = dspy.LM(model=HF_MODEL_STRING, **HF_LM_KWARGS)
+        print(f"Task LM backend: HuggingFace Router ({HF_MODEL} @ {HF_ROUTER_BASE})")
     else:
         task_lm = dspy.LM(model=TASK_MODEL_STRING, **TASK_LM_KWARGS)
         print(f"Task LM backend: LM Studio ({TASK_MODEL_STRING} @ {LM_STUDIO_BASE})")

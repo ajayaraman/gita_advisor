@@ -250,9 +250,12 @@ def main():
                     help="Show full synthesis reasoning trace (default: first 6 lines).")
     ap.add_argument("--no-thinking", action="store_true", dest="no_thinking",
                     help="Hide the reasoning trace entirely.")
+    ap.add_argument("--backend", default=None,
+                    choices=["gemini", "openrouter", "hf", "lm_studio"],
+                    help="Override TASK_LM_BACKEND for this session.")
     args = ap.parse_args()
 
-    config.configure_dspy()
+    config.configure_dspy(backend=args.backend)
     advisor = load_optimized(args.program)
     console = Console()
 

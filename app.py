@@ -10,13 +10,14 @@ Features:
 
 from __future__ import annotations
 import threading
+import time
 
 import gradio as gr
 import dspy
 
 import config
 from advisor import load_optimized
-from knowledge_base import AdvaitaRetriever
+from knowledge_base import AdvaitaRetriever, format_passages_for_llm
 from corpus import EnrichedVerse, Verse, read_jsonl_enriched, read_jsonl_verses
 
 
@@ -40,7 +41,7 @@ class _ExplainInContext(dspy.Signature):
     )
 
 # ── startup — runs once when the Space boots ──────────────────────────────────
-config.configure_dspy()
+config.configure_dspy(backend="hf")
 _advisor = load_optimized()
 _retriever = AdvaitaRetriever()
 _retriever._ensure()
@@ -134,7 +135,7 @@ def _render_verse_html(verse: Verse) -> str:
 # ── CSS ────────────────────────────────────────────────────────────────────────
 
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Lato:ital,wght@0,300;0,400;1,300&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Lato:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
 
 /* ── palette ──────────────────────────────────────────────────────────────── */
 :root {
@@ -152,13 +153,20 @@ CSS = """
   --text-dim:    #A08860;
   --text-muted:  #6A5030;
   --radius:      10px;
+  --font-serif:  'EB Garamond', Georgia, 'Times New Roman', serif;
+  --font-sans:   'Lato', system-ui, sans-serif;
+  --font-display: 'Playfair Display', Georgia, serif;
 }
 
 /* ── base ─────────────────────────────────────────────────────────────────── */
 body,
 .gradio-container,
 .main,
-footer { background: var(--bg) !important; color: var(--text) !important; }
+footer {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  font-family: var(--font-sans) !important;
+}
 
 .gradio-container { max-width: 880px !important; margin: 0 auto !important; }
 
@@ -167,31 +175,32 @@ footer { display: none !important; }
 /* ── header ───────────────────────────────────────────────────────────────── */
 .app-header {
   text-align: center;
-  padding: 2.2rem 1rem 1.4rem;
+  padding: 2.4rem 1rem 1.6rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.5rem;
 }
 .app-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 2.3rem;
+  font-family: var(--font-display);
+  font-size: 2.6rem;
   color: var(--gold);
-  letter-spacing: 0.06em;
-  line-height: 1.2;
-  margin: 0 0 0.35rem;
+  letter-spacing: 0.05em;
+  line-height: 1.15;
+  margin: 0 0 0.5rem;
+  font-weight: 400;
 }
 .app-subtitle {
   color: var(--text-muted);
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   font-weight: 300;
   font-style: italic;
-  font-family: 'Lato', sans-serif;
-  letter-spacing: 0.04em;
+  font-family: var(--font-serif);
+  letter-spacing: 0.03em;
 }
 .app-ornament {
-  margin-top: 0.9rem;
+  margin-top: 1rem;
   color: var(--gold-dim);
-  font-size: 0.9rem;
-  letter-spacing: 0.6em;
+  font-size: 0.85rem;
+  letter-spacing: 0.7em;
 }
 
 /* ── chatbot container ────────────────────────────────────────────────────── */
@@ -216,8 +225,21 @@ footer { display: none !important; }
   border: 1px solid var(--gold-dim) !important;
   border-left: 3px solid var(--gold-dim) !important;
   border-radius: 3px var(--radius) var(--radius) var(--radius) !important;
-  padding: 0.8rem 1.1rem 0.8rem 1.3rem !important;
-  line-height: 1.85 !important;
+  padding: 1.1rem 1.4rem 1.1rem 1.6rem !important;
+  line-height: 1.9 !important;
+  font-family: var(--font-serif) !important;
+  font-size: 1.08rem !important;
+  color: var(--text) !important;
+}
+/* user bubble */
+#chatbot .user.message {
+  background: var(--bg-user) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) var(--radius) 3px var(--radius) !important;
+  padding: 0.8rem 1.1rem !important;
+  box-shadow: inset 0 1px 0 rgba(255,220,140,0.07) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.96rem !important;
 }
 /* inner content divs — transparent so bubble bg shows through */
 #chatbot .message.panel-full-width,
@@ -229,16 +251,19 @@ footer { display: none !important; }
 }
 
 /* markdown inside bubbles */
-#chatbot .message p   { margin: 0.4em 0 !important; }
-#chatbot .message hr  { border-color: var(--border) !important; margin: 0.5em 0 !important; }
+#chatbot .bot.message p   { margin: 0.55em 0 !important; }
+#chatbot .user.message p  { margin: 0.3em 0 !important; }
+#chatbot .message hr  { border-color: var(--border) !important; margin: 0.6em 0 !important; }
 #chatbot .message code {
   background: var(--bg-card) !important;
   color: var(--gold) !important;
   padding: 0.1em 0.4em !important;
   border-radius: 4px !important;
-  font-size: 0.86em !important;
+  font-size: 0.88em !important;
+  font-family: var(--font-sans) !important;
 }
-#chatbot .message strong { color: var(--text) !important; }
+#chatbot .message em { color: var(--text-dim) !important; }
+#chatbot .message strong { color: var(--text) !important; font-weight: 500 !important; }
 
 /* placeholder */
 #chatbot .placeholder {
@@ -250,12 +275,57 @@ footer { display: none !important; }
 #stage-status {
   min-height: 1.8rem;
   text-align: center;
-  padding: 0.3rem 0;
+  padding: 0.4rem 0.5rem;
+  font-family: 'Lato', sans-serif;
+  line-height: 1.55;
+}
+#stage-status .stage-spinner {
   color: var(--gold);
   font-style: italic;
   font-size: 0.88rem;
-  font-family: 'Lato', sans-serif;
   opacity: 0.9;
+}
+#stage-status .stage-card {
+  display: inline-block;
+  text-align: left;
+  max-width: 90%;
+  font-size: 0.84rem;
+}
+#stage-status .stage-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+  margin-bottom: 0.2rem;
+}
+#stage-status .stage-icon { color: var(--gold-dim); }
+#stage-status .stage-label {
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  min-width: 4.5rem;
+}
+#stage-status .stage-val { color: var(--text); font-style: italic; }
+#stage-status .stage-chip {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: normal;
+  margin: 0.1rem 0.1rem 0 0;
+}
+#stage-status .stage-source {
+  display: inline-block;
+  background: var(--bg-card);
+  border: 1px solid var(--gold-dim);
+  border-radius: 3px;
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--gold);
+  margin: 0.1rem 0.1rem 0 0;
 }
 
 /* ── input textbox ────────────────────────────────────────────────────────── */
@@ -277,9 +347,9 @@ footer { display: none !important; }
 #msg-input textarea {
   background: var(--bg-card) !important;
   color: var(--text) !important;
-  font-family: 'Lato', sans-serif !important;
-  font-size: 0.95rem !important;
-  line-height: 1.5 !important;
+  font-family: var(--font-serif) !important;
+  font-size: 1.02rem !important;
+  line-height: 1.55 !important;
   caret-color: var(--gold) !important;
   resize: none !important;
   border: none !important;
@@ -293,9 +363,9 @@ footer { display: none !important; }
   color: #0D0A07 !important;
   border: none !important;
   border-radius: var(--radius) !important;
-  font-family: 'Lato', sans-serif !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.04em !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
   transition: background 0.18s !important;
   height: 100% !important;
 }
@@ -306,8 +376,14 @@ footer { display: none !important; }
   color: var(--text-muted) !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
-  font-family: 'Lato', sans-serif !important;
+  font-family: var(--font-sans) !important;
   transition: color 0.15s, border-color 0.15s !important;
+  width: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px !important;
+  flex-shrink: 0 !important;
+  padding: 0 !important;
+  font-size: 1.1rem !important;
 }
 #clear-btn:hover { color: var(--text-dim) !important; border-color: var(--text-muted) !important; cursor: pointer !important; }
 
@@ -357,9 +433,10 @@ footer { display: none !important; }
   background: var(--bg-mid);
   border: 1px solid var(--gold-dim);
   border-radius: var(--radius);
-  padding: 1.5rem 1.8rem 1.6rem;
+  padding: 1.6rem 2rem 1.8rem;
   margin-top: 0.8rem;
-  line-height: 1.75;
+  line-height: 1.85;
+  font-family: var(--font-serif);
 }
 .vp-header {
   display: flex;
@@ -368,43 +445,48 @@ footer { display: none !important; }
   flex-wrap: wrap;
   gap: 0.4rem;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 0.7rem;
-  margin-bottom: 1rem;
+  padding-bottom: 0.8rem;
+  margin-bottom: 1.1rem;
 }
 .vp-ref {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.1rem;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
   color: var(--gold);
-  font-weight: 600;
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 .vp-subtitle {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-style: italic;
+  font-family: var(--font-sans);
 }
 .vp-sanskrit {
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--text);
   font-style: italic;
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.2rem;
+  font-family: var(--font-serif);
 }
 .vp-iast {
   color: var(--text-dim);
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-style: italic;
-  margin-bottom: 0.9rem;
+  margin-bottom: 1rem;
+  font-family: var(--font-serif);
 }
 .vp-label {
   color: var(--gold-dim);
-  font-size: 0.72rem;
+  font-size: 0.70rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-top: 1rem;
-  margin-bottom: 0.3rem;
-  font-family: 'Lato', sans-serif;
+  letter-spacing: 0.13em;
+  margin-top: 1.1rem;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-sans);
+  font-weight: 700;
 }
-.vp-body { color: var(--text); font-size: 0.93rem; }
-.vp-dim  { color: var(--text-dim) !important; font-style: italic; font-size: 0.88rem !important; }
+.vp-body { color: var(--text); font-size: 1rem; font-family: var(--font-serif); line-height: 1.85; }
+.vp-dim  { color: var(--text-dim) !important; font-style: italic; font-size: 0.93rem !important; }
 .vp-gold { color: var(--gold) !important; font-style: italic; }
 
 .vp-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.8rem; }
@@ -412,10 +494,10 @@ footer { display: none !important; }
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 0.75rem;
-  padding: 0.12rem 0.55rem;
+  font-size: 0.73rem;
+  padding: 0.12rem 0.6rem;
   border-radius: 20px;
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* ── explain button & output ──────────────────────────────────────────────── */
@@ -444,13 +526,48 @@ footer { display: none !important; }
   background: var(--bg-mid);
   border-left: 3px solid var(--gold-dim);
   border-radius: 0 var(--radius) var(--radius) 0;
-  padding: 1.2rem 1.5rem;
+  padding: 1.3rem 1.7rem;
   margin-top: 0.8rem;
   color: var(--text);
-  font-size: 0.93rem;
-  line-height: 1.8;
+  font-size: 1rem;
+  line-height: 1.9;
   font-style: italic;
+  font-family: var(--font-serif);
 }
+
+/* ── reasoning panel ─────────────────────────────────────────── */
+.reasoning-panel {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+.reasoning-panel .r-section {
+  margin-bottom: 1rem;
+}
+.reasoning-panel .r-label {
+  color: var(--gold-dim);
+  font-size: 0.70rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.3rem;
+}
+.reasoning-panel .r-value {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.reasoning-panel .r-trace {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
+  font-size: 0.80rem;
+  border-left: 2px solid var(--border);
+  padding-left: 0.8rem;
+  margin-top: 0.3rem;
+}
+/* accordion styling */
+#thinking-accordion > .label-wrap { color: var(--text-dim) !important; font-size: 0.82rem; }
+#thinking-accordion { background: transparent !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; margin-top: 0.5rem; }
 
 /* ── scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -460,78 +577,245 @@ footer { display: none !important; }
 """
 
 
+def _spin(text: str) -> str:
+    return f'<div class="stage-spinner">◌  {text}</div>'
+
+
+def _stage_understand(u) -> str:
+    emotion = getattr(u, "felt_emotion", "") or ""
+    concern = getattr(u, "deeper_concern", "") or ""
+    themes = getattr(u, "vedantic_themes", []) or []
+    themes_html = "".join(f'<span class="stage-chip">{t.split("(")[0].strip()}</span>' for t in themes[:4])
+    rows = []
+    if emotion:
+        rows.append(
+            f'<div class="stage-row">'
+            f'<span class="stage-label">felt</span>'
+            f'<span class="stage-val">{emotion}</span>'
+            f'</div>'
+        )
+    if concern:
+        rows.append(
+            f'<div class="stage-row">'
+            f'<span class="stage-label">concern</span>'
+            f'<span class="stage-val">{concern}</span>'
+            f'</div>'
+        )
+    if themes_html:
+        rows.append(
+            f'<div class="stage-row">'
+            f'<span class="stage-label">themes</span>'
+            f'<span>{themes_html}</span>'
+            f'</div>'
+        )
+    return f'<div class="stage-card">{"".join(rows)}</div>'
+
+
+def _stage_plan(queries: list[str]) -> str:
+    chips = "".join(f'<span class="stage-chip">"{q}"</span>' for q in queries)
+    return (
+        f'<div class="stage-card">'
+        f'<div class="stage-row">'
+        f'<span class="stage-label">searching</span>'
+        f'<span>{chips}</span>'
+        f'</div></div>'
+    )
+
+
+def _stage_retrieve(n: int) -> str:
+    return (
+        f'<div class="stage-card">'
+        f'<div class="stage-row">'
+        f'<span class="stage-label">passages</span>'
+        f'<span class="stage-val">{n} found &nbsp;—&nbsp; selecting…</span>'
+        f'</div></div>'
+    )
+
+
+def _stage_select(sources: list[str]) -> str:
+    chips = "".join(f'<span class="stage-source">{s}</span>' for s in sources)
+    return (
+        f'<div class="stage-card">'
+        f'<div class="stage-row">'
+        f'<span class="stage-label">selected</span>'
+        f'<span>{chips}</span>'
+        f'</div>'
+        f'<div class="stage-row" style="margin-top:0.15rem">'
+        f'<span class="stage-label"></span>'
+        f'<span class="stage-spinner" style="font-size:0.82rem">◌  composing response…</span>'
+        f'</div></div>'
+    )
+
+
+def _build_reasoning_html(pred) -> str:
+    """Render the pipeline's reasoning trace as an HTML block for the accordion."""
+    emotion = getattr(pred, "felt_emotion", "") or ""
+    concern = getattr(pred, "deeper_concern", "") or ""
+    themes = getattr(pred, "vedantic_themes", []) or []
+    queries = getattr(pred, "queries", []) or []
+    reasoning = getattr(pred, "synthesis_reasoning", "") or ""
+    rationale = getattr(pred, "selection_rationale", "") or ""
+
+    def section(label: str, content: str) -> str:
+        return (
+            f'<div class="r-section">'
+            f'<div class="r-label">{label}</div>'
+            f'<div class="r-value">{content}</div>'
+            f'</div>'
+        )
+
+    parts = ['<div class="reasoning-panel">']
+    if emotion:
+        parts.append(section("Felt emotion", emotion))
+    if concern:
+        parts.append(section("Deeper concern", concern))
+    if themes:
+        parts.append(section("Vedāntic themes", " &nbsp;·&nbsp; ".join(themes)))
+    if queries:
+        qs = "".join(f"<li>{q}</li>" for q in queries)
+        parts.append(section("Search queries", f"<ol style='margin:0;padding-left:1.2em'>{qs}</ol>"))
+    if rationale:
+        parts.append(section("Passage selection", rationale))
+    if reasoning:
+        escaped = reasoning.replace("<", "&lt;").replace(">", "&gt;")
+        parts.append(
+            '<div class="r-section">'
+            '<div class="r-label">Model reasoning trace</div>'
+            f'<div class="r-trace">{escaped}</div>'
+            '</div>'
+        )
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
 # ── respond (streaming generator) ─────────────────────────────────────────────
 
 def respond(message: str, history: list):
+    """Drive the 4-step pipeline manually so each step's output is shown live."""
+    _no_src = gr.update(choices=[], value=None, visible=False)
+    _noop   = gr.update()
+
+    def _emit(hist, stage_content, thinking_content=_noop):
+        return hist, stage_content, None, _no_src, "", thinking_content
+
     if not message.strip():
-        yield history, "", None, gr.update(choices=[], value=None, visible=False), ""
+        yield *_emit(history, ""), _noop
         return
 
     history = history + [{"role": "user", "content": message}]
-    stage: list[str] = ["understanding your question…"]
-    pred_box: list = [None]
-    err_box:  list = [None]
-    done = threading.Event()
     dspy_hist = _to_dspy_history(history[:-1])
 
-    def _run():
-        try:
-            pred_box[0] = _advisor(
-                user_question=message,
-                history=dspy_hist,
-                _stage_cb=lambda s: stage.__setitem__(0, s),
-            )
-        except Exception as exc:
-            err_box[0] = exc
-        finally:
-            done.set()
-
-    threading.Thread(target=_run, daemon=True).start()
-
-    # yield stage updates while advisor runs
-    while not done.wait(timeout=0.15):
-        yield (
-            history,
-            f"◌  {stage[0]}",
-            None,
-            gr.update(choices=[], value=None, visible=False),
-            "",
-        )
-
-    if err_box[0]:
-        history = history + [{"role": "assistant", "content": f"*Error — {err_box[0]}*"}]
-        yield history, "", None, gr.update(choices=[], value=None, visible=False), ""
+    # ── Step 1: understand ────────────────────────────────────────────────────
+    yield *_emit(history, _spin("understanding your question…")),
+    try:
+        u = _advisor.understand(history=dspy_hist, user_question=message)
+    except Exception as exc:
+        history = history + [{"role": "assistant", "content": f"*Error — {exc}*"}]
+        yield *_emit(history, ""),
         return
 
-    pred = pred_box[0]
+    # Show what was understood; plan is next
+    yield *_emit(history, _stage_understand(u)),
 
-    # character-stream the response
+    # ── Step 2: plan retrieval queries ────────────────────────────────────────
+    try:
+        p = _advisor.plan(
+            surface_concern=u.surface_concern,
+            deeper_concern=u.deeper_concern,
+            vedantic_themes=u.vedantic_themes,
+        )
+    except Exception as exc:
+        history = history + [{"role": "assistant", "content": f"*Error — {exc}*"}]
+        yield *_emit(history, ""),
+        return
+
+    queries = p.queries[: config.N_RETRIEVAL_QUERIES] if p.queries else [u.deeper_concern]
+    yield *_emit(history, _stage_plan(queries)),
+
+    # ── Step 3: retrieve (fast, local Chroma) ────────────────────────────────
+    hits = _advisor._retriever.search_many(queries, k_per=config.TOP_K_RETRIEVE)
+    candidates = hits[: max(8, config.TOP_K_RETRIEVE)]
+    candidates_text = format_passages_for_llm(candidates)
+    candidates_as_dicts = [h.to_dict() for h in candidates]
+    previously_cited = [
+        src for msg in dspy_hist.messages for src in msg.get("sources_cited", [])
+    ]
+    yield *_emit(history, _stage_retrieve(len(candidates))),
+
+    # ── Step 4: select passages ───────────────────────────────────────────────
+    try:
+        s = _advisor.select(
+            deeper_concern=u.deeper_concern,
+            candidate_passages=candidates_text,
+            previously_cited=previously_cited,
+        )
+    except Exception as exc:
+        history = history + [{"role": "assistant", "content": f"*Error — {exc}*"}]
+        yield *_emit(history, ""),
+        return
+
+    valid_idx = [
+        i for i in (s.selected_indices or [])
+        if isinstance(i, int) and 1 <= i <= len(candidates)
+    ]
+    if not valid_idx:
+        valid_idx = list(range(1, min(4, len(candidates) + 1)))
+    selected = [candidates[i - 1] for i in valid_idx]
+    selected_text = format_passages_for_llm(selected)
+
+    # Show selected sources; synthesize is next
+    selected_refs = [
+        candidates_as_dicts[i - 1].get("verse_ref", f"#{i}").upper().replace("_", " ")
+        for i in valid_idx
+        if i - 1 < len(candidates_as_dicts)
+    ]
+    yield *_emit(history, _stage_select(selected_refs)),
+
+    # ── Step 5: synthesize ────────────────────────────────────────────────────
+    try:
+        a = _advisor.synthesize(
+            history=dspy_hist,
+            user_question=message,
+            felt_emotion=u.felt_emotion,
+            deeper_concern=u.deeper_concern,
+            selected_passages=selected_text,
+        )
+    except Exception as exc:
+        history = history + [{"role": "assistant", "content": f"*Error — {exc}*"}]
+        yield *_emit(history, ""),
+        return
+
+    pred = dspy.Prediction(
+        response=a.response,
+        sources_cited=a.sources_cited or [],
+        synthesis_reasoning=getattr(a, "reasoning", ""),
+        felt_emotion=u.felt_emotion,
+        surface_concern=u.surface_concern,
+        deeper_concern=u.deeper_concern,
+        vedantic_themes=u.vedantic_themes,
+        queries=queries,
+        retrieved_passages=candidates_as_dicts,
+        selected_indices=valid_idx,
+        selection_rationale=s.selection_rationale,
+    )
+    thinking = _build_reasoning_html(pred)
+
+    # ── Stream response word by word ─────────────────────────────────────────
     history = history + [{"role": "assistant", "content": ""}]
     streamed = ""
-    for char in pred.response:
-        streamed += char
+    words = pred.response.split(" ")
+    for i, word in enumerate(words):
+        streamed += word + (" " if i < len(words) - 1 else "")
         history[-1]["content"] = streamed
-        yield (
-            history,
-            "◌  composing…",
-            None,
-            gr.update(choices=[], value=None, visible=False),
-            "",
-        )
+        yield history, "", None, _no_src, "", thinking
+        time.sleep(0.018)
 
-    # append source footer
     if pred.sources_cited:
         footer = "\n\n---\n**Sources:** " + "  ·  ".join(f"`{s}`" for s in pred.sources_cited)
         history[-1]["content"] += footer
 
     sources = pred.sources_cited or []
-    yield (
-        history,
-        "",
-        pred,
-        gr.update(choices=sources, value=None, visible=bool(sources)),
-        "",
-    )
+    yield history, "", pred, gr.update(choices=sources, value=None, visible=bool(sources)), "", thinking
 
 
 def show_verse(ref: str) -> tuple[str, str]:
@@ -662,12 +946,11 @@ with gr.Blocks(title="Gītā Advisor") as demo:
             lines=2,
             max_lines=6,
             elem_id="msg-input",
-            scale=8,
+            scale=7,
             container=False,
         )
-        with gr.Column(scale=1, min_width=90):
-            submit_btn = gr.Button("Ask →", variant="primary", elem_id="submit-btn", size="lg")
-            clear_btn  = gr.Button("Clear",  variant="secondary", elem_id="clear-btn",  size="sm")
+        submit_btn = gr.Button("Ask →", variant="primary",   elem_id="submit-btn", size="lg", scale=1, min_width=110)
+        clear_btn  = gr.Button("✕",    variant="secondary", elem_id="clear-btn",  size="lg", scale=0, min_width=46)
 
     gr.Examples(examples=EXAMPLES, inputs=msg_box, label="Opening moves")
 
@@ -686,15 +969,18 @@ with gr.Blocks(title="Gītā Advisor") as demo:
         explain_btn = gr.Button("Explain in context →", elem_id="explain-btn", visible=True, interactive=False, size="sm")
         explain_out = gr.HTML("")
 
+    with gr.Accordion("🧠  Model reasoning", open=False, elem_id="thinking-accordion"):
+        thinking_html = gr.HTML("")
+
     # ── event wiring ──────────────────────────────────────────────────────────
-    outputs = [chatbot, stage_html, pred_state, source_dd, msg_box]
+    outputs = [chatbot, stage_html, pred_state, source_dd, msg_box, thinking_html]
 
     msg_box.submit(respond, [msg_box, chatbot], outputs)
     submit_btn.click(respond, [msg_box, chatbot], outputs)
 
     clear_btn.click(
-        fn=lambda: ([], "", None, gr.update(choices=[], value=None, visible=False), "", "", ""),
-        outputs=[chatbot, stage_html, pred_state, source_dd, msg_box, verse_html, explain_out],
+        fn=lambda: ([], "", None, gr.update(choices=[], value=None, visible=False), "", "", "", ""),
+        outputs=[chatbot, stage_html, pred_state, source_dd, msg_box, verse_html, explain_out, thinking_html],
     )
 
     source_dd.change(
