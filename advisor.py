@@ -93,15 +93,32 @@ class GitaAdvisor(dspy.Module):
         # 4. Select
         if _stage_cb:
             _stage_cb("selecting passages…")
-        s = self.select(
-            deeper_concern=u.deeper_concern,
-            candidate_passages=candidates_text,
-            previously_cited=previously_cited,
-        )
-        valid_idx = [
-            i for i in (s.selected_indices or [])
-            if isinstance(i, int) and 1 <= i <= len(candidates)
-        ]
+        selection_rationale = ""
+        try:
+            s = self.select(
+                deeper_concern=u.deeper_concern,
+                candidate_passages=candidates_text,
+                previously_cited=previously_cited,
+            )
+            raw_indices = s.selected_indices or []
+            selection_rationale = s.selection_rationale or ""
+        except Exception as exc:
+            # DSPy parse failures (e.g. LM outputs verse refs like 16.5 instead
+            # of integer positions) are caught here so the pipeline never crashes.
+            print(f"[warn] Selection stage failed: {exc}. Falling back to top-4.")
+            raw_indices = []
+
+        # Coerce floats (e.g. 16.5 → 16) before range-checking so that near-miss
+        # outputs from the LM are salvaged rather than silently dropped.
+        valid_idx = []
+        for raw in raw_indices:
+            try:
+                idx = round(float(raw))
+                if 1 <= idx <= len(candidates):
+                    valid_idx.append(idx)
+            except (TypeError, ValueError):
+                pass
+
         if not valid_idx:
             valid_idx = list(range(1, min(4, len(candidates) + 1)))
 
@@ -133,7 +150,7 @@ class GitaAdvisor(dspy.Module):
             queries=queries,
             retrieved_passages=candidates_as_dicts,
             selected_indices=valid_idx,
-            selection_rationale=s.selection_rationale,
+            selection_rationale=selection_rationale,
         )
 
 

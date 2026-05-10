@@ -55,6 +55,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+import threading
+
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
@@ -128,11 +130,25 @@ class Hit:
 
 
 # ──────────────────────────── Internals ────────────────────────────
+_chroma_client: chromadb.api.ClientAPI | None = None
+_chroma_lock = threading.Lock()
+
+
 def _client() -> chromadb.api.ClientAPI:
-    return chromadb.PersistentClient(
-        path=str(config.CHROMA_DIR),
-        settings=Settings(anonymized_telemetry=False),
-    )
+    """Return a process-wide singleton Chroma client.
+
+    Creating a new PersistentClient per call causes a SQLite race condition
+    when multiple GEPA threads call the retriever concurrently.
+    """
+    global _chroma_client
+    if _chroma_client is None:
+        with _chroma_lock:
+            if _chroma_client is None:
+                _chroma_client = chromadb.PersistentClient(
+                    path=str(config.CHROMA_DIR),
+                    settings=Settings(anonymized_telemetry=False),
+                )
+    return _chroma_client
 
 
 def _embedder() -> SentenceTransformer:
@@ -365,7 +381,9 @@ def format_hits_for_llm(hits: list[Hit]) -> str:
     blocks = []
     for i, h in enumerate(hits, start=1):
         v = h.verse
-        block = [f"[{i}] {v.verse_ref} — {v.work_display}, {v.section_display}"]
+        # Use "Passage N:" prefix (not "[N]") so the LM cannot confuse the
+        # integer position with a verse chapter.verse reference like "16.5".
+        block = [f"Passage {i}: {v.verse_ref} — {v.work_display}, {v.section_display}"]
         block.append(f"    tier: {v.tier}   score: {h.combined_score:.3f}")
         if v.translation:
             block.append(f"    Translation: {v.translation.strip()[:600]}")

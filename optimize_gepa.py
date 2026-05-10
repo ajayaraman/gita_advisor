@@ -116,7 +116,7 @@ def main():
     student = GitaAdvisor()
 
     # More threads when hitting an API (no local GPU bottleneck).
-    num_threads = 16 if args.proxy_task_lm or config.TASK_LM_BACKEND == "gemini" else 4
+    num_threads = 16 if args.proxy_task_lm or config.TASK_LM_BACKEND in ("gemini", "openrouter", "hf") else 4
 
     # Optional: get a baseline number for context
     print("\nEvaluating baseline (un-optimized) on validation set ...")

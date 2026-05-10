@@ -129,7 +129,11 @@ class SelectPassages(dspy.Signature):
     )
 
     selected_indices: list[int] = dspy.OutputField(
-        desc="Indices (1-based) of the 2-4 most relevant passages."
+        desc="Passage numbers (1-based integers) of the 2–4 most relevant passages. "
+             "Use the number that appears after 'Passage' in the candidate list "
+             "(e.g. if the passage starts with 'Passage 3:', output 3). "
+             "Never output a verse reference like '16.5' or '18.73' here — "
+             "only the integer position in the list."
     )
     selection_rationale: str = dspy.OutputField(
         desc="One sentence per selection explaining why that passage speaks to this concern."
