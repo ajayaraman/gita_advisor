@@ -47,11 +47,13 @@ License = Literal[
     "public_domain", "unlicense", "cc_by", "cc_by_sa", "open_database",
 ]
 Parser = Literal[
-    "gita_json",         # the gita/gita repo JSON layout (verse-indexed)
-    "wisdomlib_html",    # one chapter per HTML page on wisdomlib
-    "sastry_archive",    # Alladi Mahadeva Sastry OCR text from archive.org
-    "thibaut_sbe",       # Thibaut's SBE Brahma Sutra translation HTML
-    "plain_text",        # already-cleaned plain text the user dropped in
+    "gita_json",             # the gita/gita repo JSON layout (verse-indexed)
+    "wisdomlib_html",        # one chapter per HTML page on wisdomlib
+    "sastry_archive",        # Alladi Mahadeva Sastry OCR text from archive.org
+    "swarupananda_archive",  # Swami Swarupananda 1909 OCR text from archive.org
+    "wikisource_text",       # Wikisource wikitext (Vivekananda lectures, etc.)
+    "thibaut_sbe",           # Thibaut's SBE Brahma Sutra translation HTML
+    "plain_text",            # already-cleaned plain text the user dropped in
 ]
 
 
@@ -173,6 +175,66 @@ SOURCES: list[Source] = [
             "OCR will have noise — broken hyphens, occasional 'rn' → 'm'. "
             "Parser uses verse-marker regex to chunk by verse and tries to "
             "associate Śaṅkara's commentary with the verse it follows."
+        ),
+    ),
+
+    # ─── Swarupananda's Gītā translation (1909, Advaita Ashrama / Ramakrishna Math) ───
+    # Swami Swarupananda was a direct disciple of Sri Ramakrishna Paramahamsa
+    # and helped found the Ramakrishna Math. His 1909 Advaita Ashrama edition
+    # is the closest verse-indexed text in the Ramakrishna lineage that is
+    # unambiguously in the US public domain (published 1909, pre-1929 cutoff).
+    # Archive.org OCR text; parser handles IAST transliteration lines in the OCR.
+    Source(
+        key="swarupananda_gita",
+        name="Srimad Bhagavad Gita — Swami Swarupananda translation (1909)",
+        work="bhagavad_gita",
+        tier="supporting",
+        license="public_domain",
+        license_url="https://archive.org/details/aGEn_srimad-bhagavad-gita-english-trans.-by-swami-swarupananda-advaita-ashrama-calcutta",
+        translator="Swami Swarupananda",
+        year=1909,
+        urls=(
+            "https://archive.org/download/in.ernet.dli.2015.386852/2015.386852.Srimad-Bhagavad_djvu.txt",
+        ),
+        parser="swarupananda_archive",
+        notes=(
+            "Published by Advaita Ashrama (Ramakrishna Math), Calcutta. "
+            "archive.org OCR of the 1909 first edition. No bhashya — verse "
+            "translations only. Parser handles IAST diacritic lines and "
+            "all-caps OCR noise. The verse text will merge with gita_json via "
+            "verse_ref; gita_json_core takes translation priority, so "
+            "Swarupananda's voice appears when Sivananda is absent."
+        ),
+    ),
+
+    # ─── Swami Vivekananda, "Thoughts on the Gita" (1897) ───
+    # A single public lecture Vivekananda delivered in 1897, published in
+    # The Complete Works vol. 4. Not a verse-by-verse commentary — it is a
+    # philosophical discourse that anchors to specific verses (mainly Ch. 2).
+    # Wikisource edition is CC BY-SA; the underlying work is public domain
+    # (Vivekananda died 1902). Parser extracts verse-keyed commentary blocks.
+    Source(
+        key="vivekananda_gita",
+        name="Swami Vivekananda — Thoughts on the Gita (1897)",
+        work="bhagavad_gita",
+        tier="supporting",
+        license="public_domain",
+        license_url="https://en.wikisource.org/wiki/The_Complete_Works_of_Swami_Vivekananda/Volume_4/Lectures_and_Discourses/Thoughts_on_the_Gita",
+        translator="Swami Vivekananda",
+        year=1897,
+        urls=(
+            # Wikisource raw wikitext endpoint — downloads as plain text
+            "https://en.wikisource.org/w/index.php?title=The_Complete_Works_of_Swami_Vivekananda/Volume_4/Lectures_and_Discourses/Thoughts_on_the_Gita&action=raw",
+        ),
+        parser="wikisource_text",
+        notes=(
+            "Not a systematic verse commentary — covers selected verses from "
+            "Ch. 2 and touches others. Parser yields partial-coverage Verses "
+            "only for verses Vivekananda explicitly discusses; his commentary "
+            "is stored in the bhashya field with bhashya_translator set to "
+            "'Swami Vivekananda, 1897' so it's distinct from Sankara's bhashya. "
+            "Adds the Ramakrishna-Vivekananda voice to the advisor_view "
+            "embedding, helping users who phrase questions in modern English."
         ),
     ),
 

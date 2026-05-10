@@ -43,10 +43,16 @@ from sources_registry import enabled_sources, by_key, Source
 # Parsers
 from parsers import gita_json as parser_gita_json
 from parsers import sastry_archive as parser_sastry
+from parsers import swarupananda_archive as parser_swarupananda
+from parsers import wikisource_text as parser_wikisource
 
 
-# When two sources both have a translation, this list decides which wins
-GITA_TEXT_PRIORITY = ("gita_json_core", "sastry_gita_bhashya")
+# When two sources both have a translation, this list decides which wins.
+# Lower index = higher priority. gita_json_core (Sivananda) stays top;
+# Swarupananda (1909, Advaita Ashrama) ranks above Sastry for translation
+# because Swarupananda's English is a cleaner stand-alone verse text whereas
+# Sastry's is often paraphrasing Sankara's gloss into the verse rendering.
+GITA_TEXT_PRIORITY = ("gita_json_core", "swarupananda_gita", "sastry_gita_bhashya")
 
 
 def _parse_source(src: Source, raw_dir: Path) -> Iterable[Verse]:
@@ -70,6 +76,12 @@ def _parse_source(src: Source, raw_dir: Path) -> Iterable[Verse]:
 
     if src.parser == "sastry_archive":
         return parser_sastry.parse(raw_dir)
+
+    if src.parser == "swarupananda_archive":
+        return parser_swarupananda.parse(raw_dir)
+
+    if src.parser == "wikisource_text":
+        return parser_wikisource.parse(raw_dir)
 
     if src.parser == "wisdomlib_html":
         # Stub for now — see parsers/wisdomlib_html.py to implement.
